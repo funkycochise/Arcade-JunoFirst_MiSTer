@@ -3,7 +3,7 @@
 //  Port to MiSTer.
 //  Copyright (C) 2026 Rodimus
 //
-//  Tutankham for MiSTer
+//  Juno First for MiSTer
 //  Based on Time Pilot core, original design Copyright (C) 2017 Dar
 //  	Initial port to MiSTer Copyright (C) 2017 Sorgelig
 //  	Updated port to MiSTer Copyright (C) 2021 Ace,
@@ -315,7 +315,7 @@ reg         cfg_write;
 reg   [5:0] cfg_address;
 reg  [31:0] cfg_data;
 
-//Reconfigure PLL to apply an ~1% underclock to Tutankham to bring video timings in spec for 60Hz VSync (sourced from Genesis core)
+//Reconfigure PLL to apply an ~1% underclock to Juno First to bring video timings in spec for 60Hz VSync (sourced from Genesis core)
 pll_cfg pll_cfg
 (
 	.mgmt_clk(CLK_50M),
@@ -463,7 +463,7 @@ wire hs, vs;
 wire [4:0] r_out, g_out, b_out;
 
 //Adjust color tones for the final output so they better match an original
-//Tutankham PCB (credit: Paulb-nl)
+//Juno First PCB (credit: Paulb-nl)
 wire [7:0] r = (r_out[0] ? 8'h19 : 8'h00) + 
                (r_out[1] ? 8'h24 : 8'h00) + 
                (r_out[2] ? 8'h35 : 8'h00) +
@@ -501,8 +501,8 @@ arcade_video #(256,24) arcade_video
 	.fx(status[17:15])
 );
 
-//Instantiate Tutankham top-level module
-Tutankham TUT_inst
+//Instantiate Juno First top-level module
+JunoFirst JF_inst
 (
 	.reset(~reset),                                        // input reset
 
@@ -549,7 +549,7 @@ Tutankham TUT_inst
 	
 	.pause(pause_cpu),
 	
-	//Flag to signal that Tutankham has been underclocked to normalize video timings in order to maintain consistent sound timings and pitch
+	//Flag to signal that Juno First has been underclocked to normalize video timings in order to maintain consistent sound timings and pitch
 	.underclock(status[21]),
 
 	.hs_address(hs_address),

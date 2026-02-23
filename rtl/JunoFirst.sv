@@ -1,6 +1,6 @@
 //============================================================================
 // 
-//  Tutankham top-level module
+//  Juno First top-level module
 //  Copyright (C) 2021 Ace
 //
 //  Permission is hereby granted, free of charge, to any person obtaining a
@@ -24,7 +24,7 @@
 //============================================================================
 
 //Module declaration, I/O ports
-module Tutankham
+module JunoFirst
 (
 	input                reset,
 	input                clk_49m,                  //Actual frequency: 49.152MHz
@@ -101,7 +101,7 @@ selector DLSEL
 );
 
 //Instantiate main PCB
-Tutankham_CPU main_pcb
+JunoFirst_CPU main_pcb
 (
 	.reset(reset),
 	.clk_49m(clk_49m),

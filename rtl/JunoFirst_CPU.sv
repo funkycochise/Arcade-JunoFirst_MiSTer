@@ -24,7 +24,7 @@
 //============================================================================
 
 //Module declaration, I/O ports
-module Tutankham_CPU
+module JunoFirst_CPU
 (
 	input         reset,
 	input         clk_49m,          //Actual frequency: 49.152MHz
@@ -80,11 +80,7 @@ assign cs_controls_dip1 = cs_in0 | cs_in1 | cs_in2 | cs_dsw1;
 assign cs_dip2 = cs_dsw2;
 
 //Output primary MC6809E address lines A5 and A6 to sound board
-// Swap A5/A6 so the sound board's {A6,A5} mux matches Tutankham's address map:
-// 0x8180 (IN0): A[6:5]=00 → mux 00 = coins/start  ✓
-// 0x81A0 (IN1): A[6:5]=01 → need mux 01 for P1, so swap: output A5=A[6], A6=A[5]
-// 0x81C0 (IN2): A[6:5]=10 → need mux 10 for P2, so swap: output A5=A[6], A6=A[5]
-// 0x81E0 (DSW1): A[6:5]=11 → mux 11 = dip_sw  ✓ (swap doesn't matter for 00/11)
+// Juno First address map: input ports at 0x8020-0x802C, sound board mux uses A[6:5]
 assign cpubrd_A5 = cpu_A[6];
 assign cpubrd_A6 = cpu_A[5];
 
@@ -198,40 +194,63 @@ mc6809e E3
 
 //------------------------------------------------------ Address decoding ------------------------------------------------------//
 
-//Tutankham memory map
+//Juno First memory map
 wire n_cs_videoram = ~(cpu_A[15] == 1'b0);               // 0x0000-0x7FFF (32KB video RAM)
-// NOTE: There is no general work RAM at 0x8000-0x87FF in Tutankham.
-// That region is entirely I/O (palette, scroll, controls, mainlatch, etc.)
-// The only RAM in the 0x8xxx range is at 0x8800-0x8FFF (workram2).
-// Keeping this wire for hiscore compatibility but it should never be used in the data mux.
-wire n_cs_workram  = 1'b1;  // Disabled — no work RAM at 0x8000-0x87FF
-wire n_cs_workram2 = ~(cpu_A[15:11] == 5'b10001);         // 0x8800-0x8FFF (2KB work RAM expansion)
+//Juno First work RAM: 0x8100-0x8FFF (3840 bytes, ~4KB)
+//This is larger than Tutankham's 0x8800-0x8FFF (2KB)
+wire n_cs_workram  = ~(cpu_A[15:8] >= 8'h81 && cpu_A[15:8] <= 8'h8F);  // 0x8100-0x8FFF
+wire n_cs_workram2 = 1'b1;  // Disabled — replaced by larger workram above
 wire n_cs_bankrom  = ~(cpu_A[15:12] == 4'b1001);          // 0x9000-0x9FFF (4KB banked ROM window)
 wire n_cs_mainrom  = ~(cpu_A[15:13] == 3'b101 |
                        cpu_A[15:13] == 3'b110 |
                        cpu_A[15:13] == 3'b111);            // 0xA000-0xFFFF (24KB main ROM)
 
-//Tutankham I/O decoding (memory-mapped in 0x8000-0x87FF region)
-wire cs_palette    = (cpu_A[15:4] == 12'h800);             // 0x8000-0x800F (palette RAM)
-wire cs_scroll     = (cpu_A[15:4] == 12'h810);             // 0x8100-0x810F (scroll register)
-wire cs_watchdog   = (cpu_A[15:4] == 12'h812);             // 0x8120 (watchdog)
-wire cs_dsw2       = (cpu_A[15:4] == 12'h816);             // 0x8160 (DIP SW2)
-wire cs_in0        = (cpu_A[15:4] == 12'h818);             // 0x8180 (IN0: coins, start)
-wire cs_in1        = (cpu_A[15:4] == 12'h81A);             // 0x81A0 (IN1: P1 controls)
-wire cs_in2        = (cpu_A[15:4] == 12'h81C);             // 0x81C0 (IN2: P2 controls)
-wire cs_dsw1       = (cpu_A[15:4] == 12'h81E);             // 0x81E0 (DIP SW1)
-wire cs_mainlatch  = (cpu_A[15:3] == 13'h1040) & ~cpu_RnW; // 0x8200-0x8207 (main latch)
-wire cs_banksel_wr = (cpu_A[15:8] == 8'h83) & ~cpu_RnW;    // 0x8300 (bank select)
-wire cs_soundon    = (cpu_A[15:8] == 8'h86) & ~cpu_RnW;    // 0x8600 (sound enable)
-wire cs_soundcmd   = (cpu_A[15:8] == 8'h87) & ~cpu_RnW;    // 0x8700 (sound command)
+//Juno First I/O decoding (memory-mapped in 0x8000-0x80FF region)
+//Reference: MAME junofrst.cpp main_map and Juno First schematics
+wire cs_palette    = (cpu_A[15:4] == 12'h800);              // 0x8000-0x800F (palette RAM, same as TUT)
+wire cs_dsw2       = (cpu_A[15:0] == 16'h8010);             // 0x8010 (DIP SW2)
+wire cs_watchdog   = (cpu_A[15:0] == 16'h801C);             // 0x801C (watchdog reset)
+wire cs_in0        = (cpu_A[15:0] == 16'h8020);             // 0x8020 (SYSTEM: coins, start)
+wire cs_in1        = (cpu_A[15:0] == 16'h8024);             // 0x8024 (P1 controls)
+wire cs_in2        = (cpu_A[15:0] == 16'h8028);             // 0x8028 (P2 controls)
+wire cs_dsw1       = (cpu_A[15:0] == 16'h802C);             // 0x802C (DIP SW1)
+wire cs_mainlatch  = (cpu_A[15:3] == 13'h1006) & ~cpu_RnW;  // 0x8030-0x8037 (main latch, active low bit 0)
+wire cs_soundon    = (cpu_A[15:0] == 16'h8040) & ~cpu_RnW;  // 0x8040 (sound IRQ trigger)
+wire cs_soundcmd   = (cpu_A[15:0] == 16'h8050) & ~cpu_RnW;  // 0x8050 (sound command data)
+wire cs_banksel_wr = (cpu_A[15:0] == 16'h8060) & ~cpu_RnW;  // 0x8060 (bank select)
+wire cs_blitter    = (cpu_A[15:2] == 14'h201C) & ~cpu_RnW;  // 0x8070-0x8073 (blitter, active on write)
 
-//ROM bank select register (0x8300)
+//ROM bank select register (0x8060)
 reg [3:0] rom_bank = 4'd0;
 always_ff @(posedge clk_49m) begin
 	if(!reset)
 		rom_bank <= 4'd0;
 	else if(cen_3m && cs_banksel_wr)
 		rom_bank <= cpu_Dout[3:0];
+end
+
+//----------------------------------------------------------- Blitter ----------------------------------------------------------//
+
+// Juno First hardware blitter — 16x16 nibble-addressed sprite copy/clear
+// Writes to 0x8070-0x8073: bytes 0-1 = dest nibble addr, bytes 2-3 = src nibble addr
+// Write to 0x8073 triggers the blit operation
+// Phase 2: Implement blitter logic and blitrom instantiation
+reg [7:0] blitterdata [0:3];
+initial begin
+	integer i;
+	for (i = 0; i < 4; i = i + 1)
+		blitterdata[i] = 8'd0;
+end
+always_ff @(posedge clk_49m) begin
+	if(!reset) begin
+		blitterdata[0] <= 8'd0;
+		blitterdata[1] <= 8'd0;
+		blitterdata[2] <= 8'd0;
+		blitterdata[3] <= 8'd0;
+	end
+	else if(cs_blitter)
+		blitterdata[cpu_A[1:0]] <= cpu_Dout;
+	// TODO Phase 2: trigger blit when cpu_A[1:0]==2'b11 written
 end
 
 //------------------------------------------------------ CPU data input mux ---------------------------------------------------//
@@ -243,14 +262,13 @@ end
 // I/O registers must be checked first (they're in the 0x8000-0x87FF range)
 // Controls/DIP data comes from the sound board via controls_dip
 wire [7:0] cpu_Din = cs_palette                              ? palette_D :
-                     cs_scroll                               ? scroll_reg :
                      cs_watchdog                             ? 8'hFF :
                      cs_in1          ? {1'b1, ~p1_fire_ext[2], ~p1_fire_ext[1], ~p1_fire_ext[0],
                                         ~p1_joy[3], ~p1_joy[2], ~p1_joy[1], ~p1_joy[0]} :
                      cs_in2          ? {1'b1, ~p2_fire_ext[2], ~p2_fire_ext[1], ~p2_fire_ext[0],
                                         ~p2_joy[3], ~p2_joy[2], ~p2_joy[1], ~p2_joy[0]} :
                      (cs_dsw2 | cs_in0 | cs_dsw1)            ? controls_dip :
-                     ~n_cs_workram2                          ? workram2_D :
+                     ~n_cs_workram                           ? workram_D :
                      ~n_cs_bankrom                           ? bank_rom_D :
                      ~n_cs_mainrom                           ? mainrom_D :
                      ~n_cs_videoram                          ? videoram_D :
@@ -336,32 +354,23 @@ eprom_4k bank8 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(bank8_D),
 
 //------------------------------------------------------------ RAM ------------------------------------------------------------//
 
-// Work RAM at 0x8000-0x87FF does not exist in Tutankham hardware.
-// Hiscore support uses the 0x8800-0x8FFF work RAM (workram2) instead.
-
-//Work RAM (0x8800-0x8FFF, 2KB) — the only general-purpose RAM in the I/O region
-wire [7:0] workram2_D;
-dpram_dc #(.widthad_a(11)) workram2
+//Work RAM (0x8100-0x8FFF, ~4KB) — Juno First has more work RAM than Tutankham
+wire [7:0] workram_D;
+dpram_dc #(.widthad_a(12)) workram
 (
 	.clock_a(clk_49m),
-	.wren_a(~n_cs_workram2 & ~cpu_RnW),
-	.address_a(cpu_A[10:0]),
+	.wren_a(~n_cs_workram & ~cpu_RnW),
+	.address_a(cpu_A[11:0]),
 	.data_a(cpu_Dout),
-	.q_a(workram2_D),
+	.q_a(workram_D),
 
 	.clock_b(clk_49m),
 	.wren_b(hs_write),
-	.address_b(hs_address[10:0]),
+	.address_b(hs_address[11:0]),
 	.data_b(hs_data_in),
 	.q_b(hs_data_out)
 );
 
-// Scroll register (0x8100, 1 byte readable/writable)
-reg [7:0] scroll_reg = 8'd0;
-always_ff @(posedge clk_49m) begin
-	if(cen_6m && cs_scroll && ~cpu_RnW)
-		scroll_reg <= cpu_Dout;
-end
 
 // Palette register file (0x8000-0x800F, 16 entries × 8 bits)
 // Uses registers instead of SPRAM so video scanout can read simultaneously with CPU
@@ -380,10 +389,9 @@ wire [7:0] palette_D = palette_regs[cpu_A[3:0]];  // CPU read-back path
 //Video RAM (0x0000-0x7FFF, 32KB) - dual port: A=CPU, B=video scanout
 wire [7:0] videoram_D;
 wire [7:0] videoram_vout;
-// Apply flip and scroll to VRAM read coordinates (matching MAME screen_update)
+// Apply flip to VRAM read coordinates (Juno First has no hardware scroll register)
 wire [7:0] eff_x = pix_x ^ {8{flip_x}};
-wire [7:0] scroll_y = (eff_x < 8'd192) ? scroll_reg : 8'd0;
-wire [7:0] eff_y = (v_cnt[7:0] ^ {8{flip_y}}) + scroll_y;
+wire [7:0] eff_y = v_cnt[7:0] ^ {8{flip_y}};
 wire [14:0] vram_rd_addr = {eff_y, eff_x[7:1]};
 
 dpram_dc #(.widthad_a(15)) videoram
@@ -404,27 +412,23 @@ dpram_dc #(.widthad_a(15)) videoram
 reg irq_enable = 0;
 reg flip_x = 0;
 reg flip_y = 0;
-reg stars_enable = 0;
-reg sound_mute = 0;
 always_ff @(posedge clk_49m) begin
 	if(!reset) begin
 		irq_enable <= 0;
 		flip_x <= 0;
 		flip_y <= 0;
-		stars_enable <= 0;
-		sound_mute <= 0;
 	end
 	else if(cen_3m) begin
 		if(cs_mainlatch)
 			case(cpu_A[2:0])
 				3'b000: irq_enable <= cpu_Dout[0];   // LS259 Q0: IRQ enable
-				3'b001: ;  // PAY OUT - unused
-				3'b010: ;  // Coin counter 2
-				3'b011: ;  // Coin counter 1
-				3'b100: stars_enable <= cpu_Dout[0];  // Stars enable (LS259 Q4)
-				3'b101: sound_mute <= cpu_Dout[0];    // Sound mute (LS259 Q5)
-				3'b110: flip_x <= cpu_Dout[0];        // Flip screen X (LS259 Q6)
-				3'b111: flip_y <= cpu_Dout[0];        // Flip screen Y (LS259 Q7)
+				3'b001: ;  // Coin counter 2 (active but no FPGA effect)
+				3'b010: ;  // Coin counter 1 (active but no FPGA effect)
+				3'b011: ;  // Unused
+				3'b100: flip_x <= cpu_Dout[0];        // Flip screen X (LS259 Q4, was Q6 in TUT)
+				3'b101: flip_y <= cpu_Dout[0];        // Flip screen Y (LS259 Q5, was Q7 in TUT)
+				3'b110: ;  // Unused
+				3'b111: ;  // Unused
 			endcase
 	end
 end
@@ -494,34 +498,6 @@ k082 F5
 	.v128(v_cnt[7])
 );
 
-//--------------------------------------------------------- Starfield ----------------------------------------------------------//
-
-// MC_STARS expects real clock signals, not narrow clock enables.
-// div[2] = ~6.144 MHz square wave (49.152/8), div[1] = ~12.288 MHz (49.152/4)
-// These have proper 50% duty cycle, matching Moon Cresta's 6/12 MHz clocks.
-
-wire [1:0] star_r, star_g, star_b;
-MC_STARS stars_gen
-(
-	.I_CLK_12M(div[1]),
-	.I_CLK_6M(div[2]),
-	.I_H_FLIP(flip_x),
-	.I_V_SYNC(~video_vsync),
-//	.I_8HF(h_cnt[3] ^ flip_x),
-//	.I_256HnX(h256),
-	.I_8HF(pix_x[3] ^ flip_x),
-	.I_256HnX(1'b1),
-//  .I_256HnX(pix_x[7]),
-	.I_1VF(v_cnt[0] ^ flip_y),
-	.I_2V(v_cnt[1]),
-	.I_STARS_ON(stars_enable),
-	.I_STARS_OFFn(1'b1),
-	.I_PAUSEn(~pause),
-	.O_R(star_r),
-	.O_G(star_g),
-	.O_B(star_b),
-	.O_NOISE()
-);
 
 //----------------------------------------------------- Final video output -----------------------------------------------------//
 
@@ -551,14 +527,8 @@ wire [7:0] pal_byte = palette_regs[pixel_index];
 // Blank output during HBlank and VBlank to prevent ghost pixels
 wire active_video = ~hblk & ~vblk;
 
-wire pixel_is_bg = (pixel_index == 4'd0);
-wire show_stars = active_video & pixel_is_bg & stars_enable;
-
-assign red   = show_stars  ? {star_r, star_r[1], 2'b00}                    :
-               active_video ? {pal_byte[2:0], pal_byte[2:1]}              : 5'd0;
-assign green = show_stars  ? {star_g, star_g[1], 2'b00}                    :
-               active_video ? {pal_byte[5:3], pal_byte[5:4]}              : 5'd0;
-assign blue  = show_stars  ? {star_b, star_b[1], 2'b00}                    :
-               active_video ? {pal_byte[7:6], pal_byte[7:6], pal_byte[7]} : 5'd0;
+assign red   = active_video ? {pal_byte[2:0], pal_byte[2:1]}              : 5'd0;
+assign green = active_video ? {pal_byte[5:3], pal_byte[5:4]}              : 5'd0;
+assign blue  = active_video ? {pal_byte[7:6], pal_byte[7:6], pal_byte[7]} : 5'd0;
 
 endmodule
