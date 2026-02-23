@@ -25,7 +25,7 @@
 	<joystick>4-way</joystick>
 	<special_controls></special_controls>
 	<num_buttons>2</num_buttons>
-	<button_names></button_names>
+	<button_names>Fire,Warp</button_names>
 
 	<!-- DIP switches from MAME junofrst.cpp
 	     DSW1 (bits 0-7)  = Coinage (KONAMI_COINAGE_LOC)
@@ -83,6 +83,8 @@
 	</rom>
 
 	<!-- Index 3: Hiscore data (leave empty or populate later) -->
+    <!-- Juno First Stores in Work Ram : 8100->819F -->
+
 	<rom index="3"></rom>
 	<rom index="4"></rom>
 

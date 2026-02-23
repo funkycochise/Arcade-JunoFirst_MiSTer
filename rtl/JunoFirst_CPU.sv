@@ -295,7 +295,8 @@ eprom_8k blit_rom2 (.ADDR(blit_byte_addr[12:0]), .CLK(clk_49m), .DATA(blit2_D),
                     .CS_DL(blit2_cs_i), .WR(ioctl_wr));
 
 // Extract source nibble from blitrom byte
-wire [3:0] blit_src_nibble = blit_src[0] ? blitrom_D[3:0] : blitrom_D[7:4];
+//wire [3:0] blit_src_nibble = blit_src[0] ? blitrom_D[3:0] : blitrom_D[7:4];
+wire [3:0] blit_src_nibble = blit_src[0] ? blitrom_D[7:4] : blitrom_D[3:0];
 
 // Blitter VRAM interface signals
 reg blit_vram_we = 0;
