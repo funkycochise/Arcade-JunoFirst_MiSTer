@@ -72,9 +72,9 @@ wire ioctl_wr_cpu = ioctl_wr && (ioctl_index == 8'd0); // Main CPU board (index 
 wire ioctl_wr_snd = ioctl_wr && (ioctl_index == 8'd1); // Sound board (index 1)
 
 //ROM loader signals for MISTer (loads ROMs from SD card)
-wire rom_m1_cs_i, rom_m2_cs_i, rom_m3_cs_i, rom_m4_cs_i, rom_m5_cs_i, rom_m6_cs_i;
-wire bank0_cs_i, bank1_cs_i, bank2_cs_i, bank3_cs_i, bank4_cs_i;
-wire bank5_cs_i, bank6_cs_i, bank7_cs_i, bank8_cs_i;
+wire prog_rom1_cs_i, prog_rom2_cs_i, prog_rom3_cs_i;
+wire bank0_cs_i, bank1_cs_i, bank2_cs_i, bank3_cs_i, bank4_cs_i, bank5_cs_i;
+wire blit0_cs_i, blit1_cs_i, blit2_cs_i;
 
 //Sound board ROM chip select (index 1, 8KB at 0x0000-0x1FFF)
 wire ep7_cs_i = (ioctl_addr < 25'h2000);
@@ -83,21 +83,18 @@ wire ep7_cs_i = (ioctl_addr < 25'h2000);
 selector DLSEL
 (
 	.ioctl_addr(ioctl_addr),
-	.rom_m1_cs(rom_m1_cs_i),
-	.rom_m2_cs(rom_m2_cs_i),
-	.rom_m3_cs(rom_m3_cs_i),
-	.rom_m4_cs(rom_m4_cs_i),
-	.rom_m5_cs(rom_m5_cs_i),
-	.rom_m6_cs(rom_m6_cs_i),
+	.prog_rom1_cs(prog_rom1_cs_i),
+	.prog_rom2_cs(prog_rom2_cs_i),
+	.prog_rom3_cs(prog_rom3_cs_i),
 	.bank0_cs(bank0_cs_i),
 	.bank1_cs(bank1_cs_i),
 	.bank2_cs(bank2_cs_i),
 	.bank3_cs(bank3_cs_i),
 	.bank4_cs(bank4_cs_i),
 	.bank5_cs(bank5_cs_i),
-	.bank6_cs(bank6_cs_i),
-	.bank7_cs(bank7_cs_i),
-	.bank8_cs(bank8_cs_i)
+	.blit0_cs(blit0_cs_i),
+	.blit1_cs(blit1_cs_i),
+	.blit2_cs(blit2_cs_i)
 );
 
 //Instantiate main PCB
@@ -132,21 +129,18 @@ JunoFirst_CPU main_pcb
 	.cs_dip2(cs_dip2),
 	.cs_controls_dip1(cs_controls_dip1),
 	
-	.rom_m1_cs_i(rom_m1_cs_i),
-	.rom_m2_cs_i(rom_m2_cs_i),
-	.rom_m3_cs_i(rom_m3_cs_i),
-	.rom_m4_cs_i(rom_m4_cs_i),
-	.rom_m5_cs_i(rom_m5_cs_i),
-	.rom_m6_cs_i(rom_m6_cs_i),
+	.prog_rom1_cs_i(prog_rom1_cs_i),
+	.prog_rom2_cs_i(prog_rom2_cs_i),
+	.prog_rom3_cs_i(prog_rom3_cs_i),
 	.bank0_cs_i(bank0_cs_i),
 	.bank1_cs_i(bank1_cs_i),
 	.bank2_cs_i(bank2_cs_i),
 	.bank3_cs_i(bank3_cs_i),
 	.bank4_cs_i(bank4_cs_i),
 	.bank5_cs_i(bank5_cs_i),
-	.bank6_cs_i(bank6_cs_i),
-	.bank7_cs_i(bank7_cs_i),
-	.bank8_cs_i(bank8_cs_i),
+	.blit0_cs_i(blit0_cs_i),
+	.blit1_cs_i(blit1_cs_i),
+	.blit2_cs_i(blit2_cs_i),
 	.ioctl_addr(ioctl_addr),
 	.ioctl_wr(ioctl_wr_cpu),
 	.ioctl_data(ioctl_data),

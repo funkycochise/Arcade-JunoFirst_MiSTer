@@ -47,13 +47,13 @@ module JunoFirst_CPU
 	//Screen centering (alters HSync, VSync and VBlank timing in the Konami 082 to reposition the video output)
 	input   [3:0] h_center, v_center,
 
-	//ROM chip selects for main program ROMs (6x 4KB)
-	input         rom_m1_cs_i, rom_m2_cs_i, rom_m3_cs_i,
-	input         rom_m4_cs_i, rom_m5_cs_i, rom_m6_cs_i,
-	//ROM chip selects for banked graphics ROMs (9x 4KB)
+	//ROM chip selects for main program ROMs (3x 8KB)
+	input         prog_rom1_cs_i, prog_rom2_cs_i, prog_rom3_cs_i,
+	//ROM chip selects for banked code+graphics ROMs (6x 8KB)
 	input         bank0_cs_i, bank1_cs_i, bank2_cs_i,
 	input         bank3_cs_i, bank4_cs_i, bank5_cs_i,
-	input         bank6_cs_i, bank7_cs_i, bank8_cs_i,
+	//ROM chip selects for blitter sprite ROMs (3x 8KB)
+	input         blit0_cs_i, blit1_cs_i, blit2_cs_i,
 	input  [24:0] ioctl_addr,
 	input   [7:0] ioctl_data,
 	input         ioctl_wr,
@@ -187,10 +187,30 @@ mc6809e E3
 	.BA(),
 	.AVMA(),
 	.BUSY(),
-	.LIC(),
+	.LIC(cpu_LIC),
 	.nHALT(1'b1),
 	.nRESET(reset)
 );
+
+// Konami-1 opcode decryption
+// The Konami-1 is a 6809 with XOR encryption on opcode fetches only.
+// We use the LIC (Last Instruction Cycle) signal: when LIC was high on the
+// previous E-rising edge, the current bus read is an opcode fetch.
+wire cpu_LIC;  // Connected to .LIC() port of mc6809e above
+
+reg opcode_fetch = 0;
+always_ff @(posedge clk_49m) begin
+	if(!reset)
+		opcode_fetch <= 0;
+	else if(cpu_E && !cpu_Q)  // Rising edge of E (when E transitions happen)
+		opcode_fetch <= cpu_LIC;
+end
+
+// XOR mask based on address bits 3 and 1 only (MAME: adr & 0xA)
+wire [7:0] konami1_xor = ({cpu_A[3], cpu_A[1]} == 2'b00) ? 8'h22 :
+                         ({cpu_A[3], cpu_A[1]} == 2'b01) ? 8'h82 :
+                         ({cpu_A[3], cpu_A[1]} == 2'b10) ? 8'h28 :
+                                                           8'h88;
 
 //------------------------------------------------------ Address decoding ------------------------------------------------------//
 
@@ -232,15 +252,66 @@ end
 //----------------------------------------------------------- Blitter ----------------------------------------------------------//
 
 // Juno First hardware blitter — 16x16 nibble-addressed sprite copy/clear
-// Writes to 0x8070-0x8073: bytes 0-1 = dest nibble addr, bytes 2-3 = src nibble addr
-// Write to 0x8073 triggers the blit operation
-// Phase 2: Implement blitter logic and blitrom instantiation
+// Reference: MAME junofrst.cpp blitter_w()
+//
+// CPU writes to 0x8070-0x8073:
+//   [0] = dest address high byte (nibble address)
+//   [1] = dest address low byte
+//   [2] = source address high byte (nibble address into blitrom)
+//   [3] = source address low byte — write here triggers blit
+//         bit 0 = copy flag (1=draw, 0=erase)
+//         bits 1:0 masked off for source address
+//
+// Blit operation: 16 rows x 16 columns of nibbles
+// After each row of 16 nibbles, dest advances by 256 (16 + 240 skip)
+
+// Blitter data registers (directly written by CPU)
 reg [7:0] blitterdata [0:3];
-initial begin
+initial begin : blit_init
 	integer i;
 	for (i = 0; i < 4; i = i + 1)
 		blitterdata[i] = 8'd0;
 end
+
+// Blitter state machine
+reg blit_active = 0;
+reg [15:0] blit_src;
+reg [15:0] blit_dest;
+reg blit_copy;
+reg [3:0] blit_row;
+reg [3:0] blit_col;
+reg [1:0] blit_phase;  // 0=read ROM, 1=read VRAM, 2=write VRAM, 3=advance
+
+// Blitter ROM (6KB = 3x 8KB ROMs, addressed by nibble address >> 1)
+// Total blitrom space: 0x6000 bytes = 24576 bytes, needs 15-bit byte address
+wire [7:0] blit0_D, blit1_D, blit2_D;
+
+wire [14:0] blit_byte_addr = blit_src[15:1];
+wire [7:0] blitrom_D = (blit_byte_addr[14:13] == 2'b00) ? blit0_D :
+                       (blit_byte_addr[14:13] == 2'b01) ? blit1_D :
+                       (blit_byte_addr[14:13] == 2'b10) ? blit2_D :
+                       8'h00;
+
+eprom_8k blit_rom0 (.ADDR(blit_byte_addr[12:0]), .CLK(clk_49m), .DATA(blit0_D),
+                    .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
+                    .CS_DL(blit0_cs_i), .WR(ioctl_wr));
+eprom_8k blit_rom1 (.ADDR(blit_byte_addr[12:0]), .CLK(clk_49m), .DATA(blit1_D),
+                    .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
+                    .CS_DL(blit1_cs_i), .WR(ioctl_wr));
+eprom_8k blit_rom2 (.ADDR(blit_byte_addr[12:0]), .CLK(clk_49m), .DATA(blit2_D),
+                    .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
+                    .CS_DL(blit2_cs_i), .WR(ioctl_wr));
+
+// Extract source nibble from blitrom byte
+wire [3:0] blit_src_nibble = blit_src[0] ? blitrom_D[3:0] : blitrom_D[7:4];
+
+// Blitter VRAM interface signals
+reg blit_vram_we = 0;
+reg [14:0] blit_vram_addr;
+reg [7:0] blit_vram_wdata;
+wire [7:0] blit_vram_rdata;  // This will come from VRAM port A when blitter is active
+
+// CPU write to blitter registers
 always_ff @(posedge clk_49m) begin
 	if(!reset) begin
 		blitterdata[0] <= 8'd0;
@@ -250,7 +321,83 @@ always_ff @(posedge clk_49m) begin
 	end
 	else if(cs_blitter)
 		blitterdata[cpu_A[1:0]] <= cpu_Dout;
-	// TODO Phase 2: trigger blit when cpu_A[1:0]==2'b11 written
+end
+
+// Blitter trigger and state machine
+// Triggered when CPU writes to 0x8073 (offset 3)
+// Runs at clk_49m, completes 16x16 = 256 nibble operations
+// Each nibble takes 4 phases (read ROM already pipelined, read VRAM, modify, write VRAM)
+always_ff @(posedge clk_49m) begin
+	if(!reset) begin
+		blit_active <= 0;
+		blit_row <= 0;
+		blit_col <= 0;
+		blit_phase <= 0;
+		blit_vram_we <= 0;
+	end
+	else begin
+		blit_vram_we <= 0;  // Default: no write
+
+		if(!blit_active) begin
+			// Watch for trigger: CPU writing to offset 3
+			if(cs_blitter && cpu_A[1:0] == 2'b11) begin
+				blit_active <= 1;
+				blit_src <= {blitterdata[2], cpu_Dout} & 16'hFFFC;  // Use cpu_Dout for byte 3 (being written now)
+				blit_dest <= {blitterdata[0], blitterdata[1]};
+				blit_copy <= cpu_Dout[0];  // Bit 0 of source low byte
+				blit_row <= 0;
+				blit_col <= 0;
+				blit_phase <= 0;
+			end
+		end
+		else begin
+			// Blitter running — 4 phases per nibble
+			case(blit_phase)
+				2'd0: begin
+					// Phase 0: Set up blitrom read address (already wired combinationally)
+					// Set up VRAM read address for the destination byte
+					blit_vram_addr <= blit_dest[15:1];
+					blit_phase <= 2'd1;
+				end
+				2'd1: begin
+					// Phase 1: VRAM read data available, ROM read data available
+					// Compute the write data
+					blit_phase <= 2'd2;
+				end
+				2'd2: begin
+					// Phase 2: Perform write if source nibble is non-zero
+					if(blit_src_nibble != 4'd0) begin
+						blit_vram_we <= 1;
+						if(blit_dest[0])
+							blit_vram_wdata <= {blit_copy ? blit_src_nibble : 4'd0, blit_vram_rdata[3:0]};
+						else
+							blit_vram_wdata <= {blit_vram_rdata[7:4], blit_copy ? blit_src_nibble : 4'd0};
+					end
+					blit_phase <= 2'd3;
+				end
+				2'd3: begin
+					// Phase 3: Advance to next nibble
+					blit_src <= blit_src + 16'd1;
+					blit_dest <= blit_dest + 16'd1;
+					blit_phase <= 0;
+
+					if(blit_col == 4'd15) begin
+						blit_col <= 0;
+						blit_dest <= blit_dest + 16'd241;  // +1 (current) +240 (skip) = 241
+						if(blit_row == 4'd15) begin
+							blit_active <= 0;  // Done
+						end
+						else begin
+							blit_row <= blit_row + 4'd1;
+						end
+					end
+					else begin
+						blit_col <= blit_col + 4'd1;
+					end
+				end
+			endcase
+		end
+	end
 end
 
 //------------------------------------------------------ CPU data input mux ---------------------------------------------------//
@@ -261,96 +408,89 @@ end
 
 // I/O registers must be checked first (they're in the 0x8000-0x87FF range)
 // Controls/DIP data comes from the sound board via controls_dip
-wire [7:0] cpu_Din = cs_palette                              ? palette_D :
-                     cs_watchdog                             ? 8'hFF :
-                     cs_in1          ? {1'b1, ~p1_fire_ext[2], ~p1_fire_ext[1], ~p1_fire_ext[0],
-                                        ~p1_joy[3], ~p1_joy[2], ~p1_joy[1], ~p1_joy[0]} :
-                     cs_in2          ? {1'b1, ~p2_fire_ext[2], ~p2_fire_ext[1], ~p2_fire_ext[0],
-                                        ~p2_joy[3], ~p2_joy[2], ~p2_joy[1], ~p2_joy[0]} :
-                     (cs_dsw2 | cs_in0 | cs_dsw1)            ? controls_dip :
-                     ~n_cs_workram                           ? workram_D :
-                     ~n_cs_bankrom                           ? bank_rom_D :
-                     ~n_cs_mainrom                           ? mainrom_D :
-                     ~n_cs_videoram                          ? videoram_D :
-                     8'hFF;
+wire [7:0] cpu_Din_raw = cs_palette                              ? palette_D :
+                         cs_watchdog                             ? 8'hFF :
+                         cs_in1          ? {1'b1, ~p1_fire_ext[2], ~p1_fire_ext[1], ~p1_fire_ext[0],
+                                            ~p1_joy[3], ~p1_joy[2], ~p1_joy[1], ~p1_joy[0]} :
+                         cs_in2          ? {1'b1, ~p2_fire_ext[2], ~p2_fire_ext[1], ~p2_fire_ext[0],
+                                            ~p2_joy[3], ~p2_joy[2], ~p2_joy[1], ~p2_joy[0]} :
+                         (cs_dsw2 | cs_in0 | cs_dsw1)            ? controls_dip :
+                         ~n_cs_workram                           ? workram_D :
+                         ~n_cs_bankrom                           ? bank_rom_D :
+                         ~n_cs_mainrom                           ? mainrom_D :
+                         ~n_cs_videoram                          ? videoram_D :
+                         8'hFF;
+
+// Apply Konami-1 decryption for opcode fetches from ROM only
+wire rom_region = (~n_cs_mainrom | ~n_cs_bankrom);
+wire [7:0] cpu_Din = (opcode_fetch && rom_region) ? (cpu_Din_raw ^ konami1_xor) : cpu_Din_raw;
 
 //------------------------------------------------------- Main program ROMs ----------------------------------------------------//
 
-//Main program ROMs (m1.1h through j6.6h, 6x 4KB = 24KB at 0xA000-0xFFFF)
-wire [7:0] rom_m1_D, rom_m2_D, rom_m3_D, rom_m4_D, rom_m5_D, rom_m6_D;
+//Main program ROMs (3x 8KB = 24KB at 0xA000-0xFFFF)
+//  prog_rom1 = jfa_b9.bin  -> CPU 0xA000-0xBFFF
+//  prog_rom2 = jfb_b10.bin -> CPU 0xC000-0xDFFF
+//  prog_rom3 = jfc_a10.bin -> CPU 0xE000-0xFFFF
+wire [7:0] prog_rom1_D, prog_rom2_D, prog_rom3_D;
 
-wire [7:0] mainrom_D = (cpu_A[15:12] == 4'hA) ? rom_m1_D :
-                       (cpu_A[15:12] == 4'hB) ? rom_m2_D :
-                       (cpu_A[15:12] == 4'hC) ? rom_m3_D :
-                       (cpu_A[15:12] == 4'hD) ? rom_m4_D :
-                       (cpu_A[15:12] == 4'hE) ? rom_m5_D :
-                       (cpu_A[15:12] == 4'hF) ? rom_m6_D :
+wire [7:0] mainrom_D = (cpu_A[15:13] == 3'b101) ? prog_rom1_D :  // 0xA000-0xBFFF
+                       (cpu_A[15:13] == 3'b110) ? prog_rom2_D :  // 0xC000-0xDFFF
+                       (cpu_A[15:13] == 3'b111) ? prog_rom3_D :  // 0xE000-0xFFFF
                        8'hFF;
 
-eprom_4k rom_m1 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(rom_m1_D),
-                 .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
-                 .CS_DL(rom_m1_cs_i), .WR(ioctl_wr));
-eprom_4k rom_m2 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(rom_m2_D),
-                 .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
-                 .CS_DL(rom_m2_cs_i), .WR(ioctl_wr));
-eprom_4k rom_m3 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(rom_m3_D),
-                 .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
-                 .CS_DL(rom_m3_cs_i), .WR(ioctl_wr));
-eprom_4k rom_m4 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(rom_m4_D),
-                 .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
-                 .CS_DL(rom_m4_cs_i), .WR(ioctl_wr));
-eprom_4k rom_m5 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(rom_m5_D),
-                 .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
-                 .CS_DL(rom_m5_cs_i), .WR(ioctl_wr));
-eprom_4k rom_m6 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(rom_m6_D),
-                 .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
-                 .CS_DL(rom_m6_cs_i), .WR(ioctl_wr));
+eprom_8k prog_rom1 (.ADDR(cpu_A[12:0]), .CLK(clk_49m), .DATA(prog_rom1_D),
+                    .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
+                    .CS_DL(prog_rom1_cs_i), .WR(ioctl_wr));
+eprom_8k prog_rom2 (.ADDR(cpu_A[12:0]), .CLK(clk_49m), .DATA(prog_rom2_D),
+                    .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
+                    .CS_DL(prog_rom2_cs_i), .WR(ioctl_wr));
+eprom_8k prog_rom3 (.ADDR(cpu_A[12:0]), .CLK(clk_49m), .DATA(prog_rom3_D),
+                    .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
+                    .CS_DL(prog_rom3_cs_i), .WR(ioctl_wr));
 
 //------------------------------------------------------ Banked graphics ROMs --------------------------------------------------//
 
-//Banked graphics ROMs (c1.1i through c9.9i, 9x 4KB)
-//Bank select register chooses which 4KB bank is visible at 0x9000-0x9FFF
-wire [7:0] bank0_D, bank1_D, bank2_D, bank3_D, bank4_D;
-wire [7:0] bank5_D, bank6_D, bank7_D, bank8_D;
+//Banked code+graphics ROMs (6x 8KB = 48KB, paged into 0x9000-0x9FFF in 4KB windows)
+//Each 8KB ROM provides two 4KB bank pages:
+//  bank0 (jfc1_a4) -> pages 0,1   bank1 (jfc2_a5) -> pages 2,3
+//  bank2 (jfc3_a6) -> pages 4,5   bank3 (jfc4_a7) -> pages 6,7
+//  bank4 (jfc5_a8) -> pages 8,9   bank5 (jfc6_a9) -> pages 10,11
+//
+//The bank select register picks one of 16 possible 4KB pages.
+//The 8KB ROM is addressed by {page_bit_0, cpu_A[11:0]} = 13 bits.
+wire [7:0] bank0_D, bank1_D, bank2_D, bank3_D, bank4_D, bank5_D;
 
-wire [7:0] bank_rom_D = (rom_bank == 4'd0) ? bank0_D :
-                        (rom_bank == 4'd1) ? bank1_D :
-                        (rom_bank == 4'd2) ? bank2_D :
-                        (rom_bank == 4'd3) ? bank3_D :
-                        (rom_bank == 4'd4) ? bank4_D :
-                        (rom_bank == 4'd5) ? bank5_D :
-                        (rom_bank == 4'd6) ? bank6_D :
-                        (rom_bank == 4'd7) ? bank7_D :
-                        (rom_bank == 4'd8) ? bank8_D :
+wire [2:0] rom_select = rom_bank[3:1];   // Which 8KB ROM (0-5)
+wire       page_half  = rom_bank[0];      // Upper or lower 4KB within the 8KB ROM
+
+wire [7:0] bank_rom_D = (rom_select == 3'd0) ? bank0_D :
+                        (rom_select == 3'd1) ? bank1_D :
+                        (rom_select == 3'd2) ? bank2_D :
+                        (rom_select == 3'd3) ? bank3_D :
+                        (rom_select == 3'd4) ? bank4_D :
+                        (rom_select == 3'd5) ? bank5_D :
                         8'hFF;
 
-eprom_4k bank0 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(bank0_D),
+wire [12:0] bank_addr = {page_half, cpu_A[11:0]};
+
+eprom_8k bank0 (.ADDR(bank_addr), .CLK(clk_49m), .DATA(bank0_D),
                 .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
                 .CS_DL(bank0_cs_i), .WR(ioctl_wr));
-eprom_4k bank1 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(bank1_D),
+eprom_8k bank1 (.ADDR(bank_addr), .CLK(clk_49m), .DATA(bank1_D),
                 .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
                 .CS_DL(bank1_cs_i), .WR(ioctl_wr));
-eprom_4k bank2 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(bank2_D),
+eprom_8k bank2 (.ADDR(bank_addr), .CLK(clk_49m), .DATA(bank2_D),
                 .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
                 .CS_DL(bank2_cs_i), .WR(ioctl_wr));
-eprom_4k bank3 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(bank3_D),
+eprom_8k bank3 (.ADDR(bank_addr), .CLK(clk_49m), .DATA(bank3_D),
                 .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
                 .CS_DL(bank3_cs_i), .WR(ioctl_wr));
-eprom_4k bank4 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(bank4_D),
+eprom_8k bank4 (.ADDR(bank_addr), .CLK(clk_49m), .DATA(bank4_D),
                 .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
                 .CS_DL(bank4_cs_i), .WR(ioctl_wr));
-eprom_4k bank5 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(bank5_D),
+eprom_8k bank5 (.ADDR(bank_addr), .CLK(clk_49m), .DATA(bank5_D),
                 .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
                 .CS_DL(bank5_cs_i), .WR(ioctl_wr));
-eprom_4k bank6 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(bank6_D),
-                .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
-                .CS_DL(bank6_cs_i), .WR(ioctl_wr));
-eprom_4k bank7 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(bank7_D),
-                .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
-                .CS_DL(bank7_cs_i), .WR(ioctl_wr));
-eprom_4k bank8 (.ADDR(cpu_A[11:0]), .CLK(clk_49m), .DATA(bank8_D),
-                .ADDR_DL(ioctl_addr), .CLK_DL(clk_49m), .DATA_IN(ioctl_data),
-                .CS_DL(bank8_cs_i), .WR(ioctl_wr));
 
 //------------------------------------------------------------ RAM ------------------------------------------------------------//
 
@@ -386,21 +526,30 @@ always_ff @(posedge clk_49m) begin
 end
 wire [7:0] palette_D = palette_regs[cpu_A[3:0]];  // CPU read-back path
 
-//Video RAM (0x0000-0x7FFF, 32KB) - dual port: A=CPU, B=video scanout
-wire [7:0] videoram_D;
+//Video RAM (0x0000-0x7FFF, 32KB) - dual port: A=CPU/blitter, B=video scanout
 wire [7:0] videoram_vout;
 // Apply flip to VRAM read coordinates (Juno First has no hardware scroll register)
 wire [7:0] eff_x = pix_x ^ {8{flip_x}};
 wire [7:0] eff_y = v_cnt[7:0] ^ {8{flip_y}};
 wire [14:0] vram_rd_addr = {eff_y, eff_x[7:1]};
 
+// VRAM port A is shared between CPU and blitter
+// When blitter is active, it owns port A for read-modify-write
+wire [14:0] vram_a_addr  = blit_active ? blit_vram_addr : cpu_A[14:0];
+wire [7:0]  vram_a_wdata = blit_active ? blit_vram_wdata : cpu_Dout;
+wire        vram_a_we    = blit_active ? blit_vram_we : (~n_cs_videoram & ~cpu_RnW);
+wire [7:0]  vram_a_rdata;
+
+assign videoram_D = vram_a_rdata;
+assign blit_vram_rdata = vram_a_rdata;
+
 dpram_dc #(.widthad_a(15)) videoram
 (
 	.clock_a(clk_49m),
-	.address_a(cpu_A[14:0]),
-	.data_a(cpu_Dout),
-	.wren_a(~n_cs_videoram & ~cpu_RnW),
-	.q_a(videoram_D),
+	.address_a(vram_a_addr),
+	.data_a(vram_a_wdata),
+	.wren_a(vram_a_we),
+	.q_a(vram_a_rdata),
 
 	.clock_b(clk_49m),
 	.address_b(vram_rd_addr),

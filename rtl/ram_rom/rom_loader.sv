@@ -23,67 +23,57 @@
 //
 //============================================================================
 
-// ROM layout for Tutankham (index 0 - main CPU board):
-// 0x0000 - 0x0FFF = rom_m1 (m1.1h)
-// 0x1000 - 0x1FFF = rom_m2 (m2.2h)
-// 0x2000 - 0x2FFF = rom_m3 (3j.3h)
-// 0x3000 - 0x3FFF = rom_m4 (m4.4h)
-// 0x4000 - 0x4FFF = rom_m5 (m5.5h)
-// 0x5000 - 0x5FFF = rom_m6 (j6.6h)
-// 0x6000 - 0x6FFF = bank0  (c1.1i)
-// 0x7000 - 0x7FFF = bank1  (c2.2i)
-// 0x8000 - 0x8FFF = bank2  (c3.3i)
-// 0x9000 - 0x9FFF = bank3  (c4.4i)
-// 0xA000 - 0xAFFF = bank4  (c5.5i)
-// 0xB000 - 0xBFFF = bank5  (c6.6i)
-// 0xC000 - 0xCFFF = bank6  (c7.7i)
-// 0xD000 - 0xDFFF = bank7  (c8.8i)
-// 0xE000 - 0xEFFF = bank8  (c9.9i)
-// Sound board ROMs loaded separately via index 1
+// ROM layout for Juno First (index 0 - main CPU board):
+// 0x00000-0x01FFF = prog_rom1 (jfa_b9.bin,  CPU 0xA000-0xBFFF)
+// 0x02000-0x03FFF = prog_rom2 (jfb_b10.bin, CPU 0xC000-0xDFFF)
+// 0x04000-0x05FFF = prog_rom3 (jfc_a10.bin, CPU 0xE000-0xFFFF)
+// 0x06000-0x07FFF = bank0     (jfc1_a4.bin, banked code+graphics)
+// 0x08000-0x09FFF = bank1     (jfc2_a5.bin)
+// 0x0A000-0x0BFFF = bank2     (jfc3_a6.bin)
+// 0x0C000-0x0DFFF = bank3     (jfc4_a7.bin)
+// 0x0E000-0x0FFFF = bank4     (jfc5_a8.bin)
+// 0x10000-0x11FFF = bank5     (jfc6_a9.bin)
+// 0x12000-0x13FFF = blit0     (jfs3_c7.bin, blitter sprite data)
+// 0x14000-0x15FFF = blit1     (jfs4_d7.bin)
+// 0x16000-0x17FFF = blit2     (jfs5_e7.bin)
 
 module selector
 (
 	input logic [24:0] ioctl_addr,
-	output logic rom_m1_cs, rom_m2_cs, rom_m3_cs, rom_m4_cs, rom_m5_cs, rom_m6_cs,
-	output logic bank0_cs, bank1_cs, bank2_cs, bank3_cs, bank4_cs,
-	             bank5_cs, bank6_cs, bank7_cs, bank8_cs
+	output logic prog_rom1_cs, prog_rom2_cs, prog_rom3_cs,
+	output logic bank0_cs, bank1_cs, bank2_cs, bank3_cs, bank4_cs, bank5_cs,
+	output logic blit0_cs, blit1_cs, blit2_cs
 );
 
 	always_comb begin
-		{rom_m1_cs, rom_m2_cs, rom_m3_cs, rom_m4_cs, rom_m5_cs, rom_m6_cs,
+		{prog_rom1_cs, prog_rom2_cs, prog_rom3_cs,
 		 bank0_cs, bank1_cs, bank2_cs, bank3_cs, bank4_cs, bank5_cs,
-		 bank6_cs, bank7_cs, bank8_cs} = 0;
+		 blit0_cs, blit1_cs, blit2_cs} = 0;
 
-		if(ioctl_addr < 'h1000)
-			rom_m1_cs = 1;
-		else if(ioctl_addr < 'h2000)
-			rom_m2_cs = 1;
-		else if(ioctl_addr < 'h3000)
-			rom_m3_cs = 1;
+		if(ioctl_addr < 'h2000)
+			prog_rom1_cs = 1;
 		else if(ioctl_addr < 'h4000)
-			rom_m4_cs = 1;
-		else if(ioctl_addr < 'h5000)
-			rom_m5_cs = 1;
+			prog_rom2_cs = 1;
 		else if(ioctl_addr < 'h6000)
-			rom_m6_cs = 1;
-		else if(ioctl_addr < 'h7000)
-			bank0_cs = 1;
+			prog_rom3_cs = 1;
 		else if(ioctl_addr < 'h8000)
-			bank1_cs = 1;
-		else if(ioctl_addr < 'h9000)
-			bank2_cs = 1;
+			bank0_cs = 1;
 		else if(ioctl_addr < 'hA000)
-			bank3_cs = 1;
-		else if(ioctl_addr < 'hB000)
-			bank4_cs = 1;
+			bank1_cs = 1;
 		else if(ioctl_addr < 'hC000)
-			bank5_cs = 1;
-		else if(ioctl_addr < 'hD000)
-			bank6_cs = 1;
+			bank2_cs = 1;
 		else if(ioctl_addr < 'hE000)
-			bank7_cs = 1;
-		else if(ioctl_addr < 'hF000)
-			bank8_cs = 1;
+			bank3_cs = 1;
+		else if(ioctl_addr < 'h10000)
+			bank4_cs = 1;
+		else if(ioctl_addr < 'h12000)
+			bank5_cs = 1;
+		else if(ioctl_addr < 'h14000)
+			blit0_cs = 1;
+		else if(ioctl_addr < 'h16000)
+			blit1_cs = 1;
+		else if(ioctl_addr < 'h18000)
+			blit2_cs = 1;
 	end
 endmodule
 
@@ -111,6 +101,31 @@ module eprom_4k
 
 		.clock_b(CLK_DL),
 		.address_b(ADDR_DL[11:0]),
+		.data_b(DATA_IN),
+		.wren_b(WR & CS_DL)
+	);
+endmodule
+
+//Generic 8KB ROM module (13-bit address)
+module eprom_8k
+(
+	input logic        CLK,
+	input logic        CLK_DL,
+	input logic [12:0] ADDR,
+	input logic [24:0] ADDR_DL,
+	input logic [7:0]  DATA_IN,
+	input logic        CS_DL,
+	input logic        WR,
+	output logic [7:0] DATA
+);
+	dpram_dc #(.widthad_a(13)) rom
+	(
+		.clock_a(CLK),
+		.address_a(ADDR[12:0]),
+		.q_a(DATA[7:0]),
+
+		.clock_b(CLK_DL),
+		.address_b(ADDR_DL[12:0]),
 		.data_b(DATA_IN),
 		.wren_b(WR & CS_DL)
 	);
