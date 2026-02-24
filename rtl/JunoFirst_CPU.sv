@@ -35,10 +35,6 @@ module JunoFirst_CPU
 
 	input   [7:0] controls_dip,
 	input  [15:0] dip_sw,
-	input   [2:0] p1_fire_ext,    // {flash_bomb, fire_right, fire_left}
-	input   [2:0] p2_fire_ext,    // {flash_bomb, fire_right, fire_left}
-	input   [3:0] p1_joy,         // {down, up, right, left} active-HIGH
-	input   [3:0] p2_joy,         // {down, up, right, left} active-HIGH
 	output  [7:0] cpubrd_Dout,
 	output        cpubrd_A5, cpubrd_A6,
 	output        cs_sounddata, irq_trigger,
@@ -200,7 +196,7 @@ KONAMI1 E3
 	.AVMA(),
 	.BUSY(),
 	.LIC(),
-	.nHALT(~blit_active),  // Was (1'b1),
+	.nHALT(~blit_active),
 	.nRESET(reset)
 );
 
@@ -402,11 +398,7 @@ end
 // Controls/DIP data comes from the sound board via controls_dip
 wire [7:0] cpu_Din_raw = cs_palette                              ? palette_D :
                          cs_watchdog                             ? 8'hFF :
-                         cs_in1          ? {1'b1, ~p1_fire_ext[2], ~p1_fire_ext[1], ~p1_fire_ext[0],
-                                            ~p1_joy[3], ~p1_joy[2], ~p1_joy[1], ~p1_joy[0]} :
-                         cs_in2          ? {1'b1, ~p2_fire_ext[2], ~p2_fire_ext[1], ~p2_fire_ext[0],
-                                            ~p2_joy[3], ~p2_joy[2], ~p2_joy[1], ~p2_joy[0]} :
-                         (cs_dsw2 | cs_in0 | cs_dsw1)            ? controls_dip :
+                         (cs_dsw2 | cs_in0 | cs_in1 | cs_in2 | cs_dsw1) ? controls_dip :
                          ~n_cs_workram                           ? workram_D :
                          ~n_cs_bankrom                           ? bank_rom_D :
                          ~n_cs_mainrom                           ? mainrom_D :

@@ -19,6 +19,8 @@ module JunoFirst_SND
 	input          [3:0] p1_joystick, p2_joystick,
 	input                p1_fire,
 	input                p2_fire,
+	input                p1_warp,
+	input                p2_warp,
 	input                btn_service,
 	input                cpubrd_A5, cpubrd_A6,
 	input                cs_controls_dip1, cs_dip2,
@@ -46,11 +48,16 @@ module JunoFirst_SND
 
 //------------------------------------------------------- Controls mux -------------------------------------------------------//
 
-wire [7:0] controls_dip1 = ({cpubrd_A6, cpubrd_A5} == 2'b00) ? {3'b111, start_buttons, btn_service, coin} :
-                           ({cpubrd_A6, cpubrd_A5} == 2'b01) ? {3'b111, p1_fire, p1_joystick[1:0], p1_joystick[3:2]} :
-                           ({cpubrd_A6, cpubrd_A5} == 2'b10) ? {3'b111, p2_fire, p2_joystick[1:0], p2_joystick[3:2]} :
-                           ({cpubrd_A6, cpubrd_A5} == 2'b11) ? dip_sw[7:0] :
-                           8'hFF;
+wire [7:0] controls_dip1 =
+    ({cpubrd_A6, cpubrd_A5} == 2'b00) ? {3'b111, start_buttons, btn_service, coin} :
+    ({cpubrd_A6, cpubrd_A5} == 2'b01) ? {2'b11, p1_fire, p1_warp,
+                                          p1_joystick[1], p1_joystick[0],
+                                          p1_joystick[3], p1_joystick[2]} :
+    ({cpubrd_A6, cpubrd_A5} == 2'b10) ? {2'b11, p2_fire, p2_warp,
+                                          p2_joystick[1], p2_joystick[0],
+                                          p2_joystick[3], p2_joystick[2]} :
+    ({cpubrd_A6, cpubrd_A5} == 2'b11) ? dip_sw[7:0] :
+    8'hFF;
 assign controls_dip = cs_controls_dip1 ? controls_dip1 :
                       cs_dip2          ? dip_sw[15:8] :
                       8'hFF;

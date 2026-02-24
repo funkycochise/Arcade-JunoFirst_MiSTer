@@ -510,14 +510,10 @@ JunoFirst JF_inst
 	
 	.p1_joystick({~m_right1, ~m_left1, ~m_down1, ~m_up1}),
 	.p2_joystick({~m_right2, ~m_left2, ~m_down2, ~m_up2}),
-	.p1_fire(~m_fire1_l),
-	.p2_fire(~m_fire2_l),
-	.m_fire1_l(m_fire1_l),
-	.m_fire1_r(m_fire1_r),
-	.m_flash1(m_flash1),
-	.m_fire2_l(m_fire2_l),
-	.m_fire2_r(m_fire2_r),
-	.m_flash2(m_flash2),
+	.p1_fire(~m_fire1),
+	.p2_fire(~m_fire2),
+	.p1_warp(~m_warp1),
+	.p2_warp(~m_warp2),
 	
 	.btn_service(~btn_service),
 
