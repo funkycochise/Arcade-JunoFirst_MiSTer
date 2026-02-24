@@ -77,8 +77,8 @@ assign cs_dip2 = cs_dsw2;
 
 //Output primary MC6809E address lines A5 and A6 to sound board
 // Juno First address map: input ports at 0x8020-0x802C, sound board mux uses A[6:5]
-assign cpubrd_A5 = cpu_A[6];
-assign cpubrd_A6 = cpu_A[5];
+assign cpubrd_A5 = cpu_A[2];
+assign cpubrd_A6 = cpu_A[3];
 
 // Latch CPU data when writing sound commands — the data bus changes
 // on the next cycle but sound board needs it held for cen_3m sampling.

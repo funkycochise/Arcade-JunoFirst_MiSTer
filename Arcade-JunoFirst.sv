@@ -517,7 +517,7 @@ JunoFirst JF_inst
 	
 	.btn_service(~btn_service),
 
-	.dip_sw({~dip_sw[1], ~dip_sw[0]}),                     // input [15:0] dip_sw
+	.dip_sw({dip_sw[1], dip_sw[0]}),                       // input [15:0] dip_sw
 	
 	.h_center(status[6:3]),                                // Screen centering
 	.v_center(status[10:7]),
